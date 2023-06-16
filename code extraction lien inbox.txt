@@ -1,0 +1,74 @@
+import imaplib
+import email
+import re
+
+#les identifiants gmail de l'utilisateur
+#son username
+username = "mohamad.fattah02@gmail.com"
+#son mot de passe
+password = "ibkrblnckigqxaet"
+
+
+# Connexion au serveur IMAP qui est le serveur de réception des mails dans les inbox. Dans notre cas c'est gmail
+
+#connexion au serveur imap gmail
+imap_server = "imap.gmail.com"
+#le numéro de port utilisé pour les connexions IMAP sécurisées
+imap_port = 993
+
+# utilisation de imaplib.IMAP4_SSL pour établir une connexion sécurisée SSL/TLS avec le serveur IMAP
+imap = imaplib.IMAP4_SSL(imap_server, imap_port)
+
+# Authentification de l'utilisateur
+imap.login(username, password)
+
+# Sélection de la boîte de réception qui est inbox
+imap.select("inbox")
+
+# Recherche de l'identifiant du dernier e-mail
+status, data = imap.search(None, "ALL")
+email_ids = data[0].split()
+#on essaye de récupérer les informations du dernier mail qui est recu avec l'option -1
+latest_email_id = email_ids[-1]
+
+# Récupération du dernier e-mail
+status, data = imap.fetch(latest_email_id, "(RFC822)")
+raw_email = data[0][1]
+email_message = email.message_from_bytes(raw_email)
+
+# Récupération du contenu de l'e-mail
+if email_message.is_multipart():
+    #boucle qui parcourt le mail
+    for part in email_message.walk():
+        #extraire le contenu
+        content_type = part.get_content_type()
+        #vérifier si le contenu est constitué de chaines de caracteres
+        if content_type == "text/plain":
+            #extraire et changer en chaine de caracteres
+            body = part.get_payload(decode=True)
+            break
+else:
+    body = email_message.get_payload(decode=True)
+
+# Extraction des liens
+if body:
+    links = re.findall(r'(https?://\S+)', body.decode())
+
+    # Affichage des liens trouvés
+    if links:
+        print("Liens dans l'e-mail numéro", latest_email_id.decode())
+        for link in links:
+            print(link)
+
+# Fermeture de la connexion IMAP
+imap.logout()
+
+
+
+
+
+
+
+
+
+
