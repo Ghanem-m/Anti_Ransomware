@@ -1,0 +1,322 @@
+import tkinter as tk
+from tkinter import messagebox, ttk
+import imaplib
+import email
+import urllib.request
+import re
+import threading
+import pickle
+
+# Function to check email and link safety
+checked_links = []
+checked_mails = []
+
+
+def check_email(username, password, checked_mails, checked_links):
+    imap_server = "imap.gmail.com"
+    imap_port = 993
+
+    try:
+        imap = imaplib.IMAP4_SSL(imap_server, imap_port)
+        imap.login(username, password)
+        imap.select("inbox")
+
+
+        status, data = imap.search(None, "ALL")
+        email_ids = data[0].split()
+
+        for email_id in email_ids:
+            status, data = imap.fetch(email_id, "(RFC822)")
+            raw_email = data[0][1]
+            email_message = email.message_from_bytes(raw_email)
+
+            if email_message.is_multipart():
+                for part in email_message.walk():
+                    content_type = part.get_content_type()
+                    if content_type == "text/plain":
+                        body = part.get_payload(decode=True)
+                        break
+            else:
+                body = email_message.get_payload(decode=True)
+
+            if body:
+                links = re.findall(r'(https?://\S+)', body.decode())
+
+                if links:
+                    if email_id not in checked_mails:
+                        message_text.insert(tk.END, f"Links in email number {email_id.decode()}\n", "bold")
+                        checked_mails.add(email_id)
+                    for link in links:
+                        if link not in checked_links:
+                            message_text.insert(tk.END, f"{link}\n", "safe")
+                            check_link_safety(imap, email_id, link, checked_links)
+                            checked_links.append(link)
+
+        imap.logout()
+    except imaplib.IMAP4.error as e:
+        message_text.insert(tk.END, f"IMAP Error: {str(e)}\n", "error")
+
+def check_link_safety(imap, email_id, link, checked_links):
+    try:
+        response = urllib.request.urlopen(link)
+
+        if response.getcode() == 200:
+            message_text.insert(tk.END, f"The link is safe.\n", "safe")
+        else:
+            message_text.insert(tk.END, f"The link '{link}' is suspicious and may contain malware.\n", "malware")
+            imap.move(email_id, 'APPLICATION.Spam')
+            imap.expunge()
+        path = re.findall(r'://[^/]+(/.*)', link)
+        if path and '@' in path[0]:
+            message_text.insert(tk.END, f"The link contains the '@' character, which can be malicious.\n", "malware")
+            imap.copy(email_id, 'APPLICATION.Spam')
+            imap.store(email_id, '+FLAGS', '\\Deleted')
+            imap.expunge()
+        if path and '%' in path[0]:
+            message_text.insert(tk.END, f"The link contains the '%' character, which can be malicious.\n", "malware")
+            imap.copy(email_id, 'APPLICATION.Spam')
+            imap.store(email_id, '+FLAGS', '\\Deleted')
+            imap.expunge()
+
+    except Exception as e:
+        message_text.insert(tk.END, f"Error checking link '{link}': {str(e)}\n", "error")
+        imap.copy(email_id, 'APPLICATION.Spam')
+        imap.store(email_id, '+FLAGS', '\\Deleted')
+        imap.expunge()
+
+window = tk.Tk()
+window.title("Malware Cleaner")
+window.configure(background="#ECECEC")
+
+# Creating the top frame
+frame_top = tk.Frame(window, bg="#3498DB")
+frame_top.pack(pady=20)
+
+
+# Creating the title label
+title_label = tk.Label(frame_top, text="Malware Cleaner", font=("Helvetica", 24), fg="white", bg="#3498DB")
+title_label.pack()
+
+# Creating the middle frame
+frame_middle = tk.Frame(window, bg="#ECECEC")
+frame_middle.pack(pady=20)
+
+# Creating the bottom frame
+frame_bottom = tk.Frame(window, bg="#ECECEC")
+frame_bottom.pack(pady=20)
+
+# Create a Treeview widget to display emails
+tree = ttk.Treeview(window, columns=('Sender', 'Subject', 'Content'))
+tree.column('#0', width=50)
+tree.column('Sender', width=150)
+tree.column('Subject', width=200)
+tree.column('Content', width=400)
+tree.heading('#0', text='No.')
+tree.heading('Sender', text='Sender')
+tree.heading('Subject', text='Subject')
+tree.heading('Content', text='Content')
+tree.pack(padx=10, pady=10)
+
+# Button to fetch and display emails
+fetch_button = tk.Button(frame_bottom, text="Fetch Emails", command=lambda: fetch_emails(email_entry.get(), password_entry.get()), font=("Helvetica", 14), bg="#3498DB", fg="white")
+fetch_button.grid(row=8, columnspan=2, pady=10)
+
+# Creating the email and password input fields
+email_label = tk.Label(frame_middle, text="Email:", font=("Helvetica", 14), bg="#ECECEC")
+email_label.grid(row=0, column=0, pady=10)
+email_entry = tk.Entry(frame_middle, font=("Helvetica", 14))
+email_entry.grid(row=0, column=1, pady=10)
+
+password_label = tk.Label(frame_middle, text="Password:", font=("Helvetica", 14), bg="#ECECEC")
+password_label.grid(row=1, column=0, pady=10)
+password_entry = tk.Entry(frame_middle, show="*", font=("Helvetica", 14))
+password_entry.grid(row=1, column=1, pady=10)
+
+# Creating the bottom frame
+frame_bottom = tk.Frame(window, bg="#ECECEC")
+frame_bottom.pack(pady=20)
+
+# Creating the Text widget to display messages
+message_text = tk.Text(frame_bottom, height=10, width=50, font=("Helvetica", 12), bg="white")
+message_text.pack(side="left", padx=10)
+
+# Creating the scrollbar for the Text widget
+scrollbar = tk.Scrollbar(frame_bottom)
+scrollbar.pack(side="right", fill="y")
+
+# Configuring the scrollbar for the Text widget
+message_text.config(yscrollcommand=scrollbar.set)
+scrollbar.config(command=message_text.yview)
+
+# Defining text styles
+message_text.tag_config("bold", font=("Helvetica", 12, "bold"))
+message_text.tag_config("safe", font=("Helvetica", 12), foreground="#27AE60")
+message_text.tag_config("malware", font=("Helvetica", 12), foreground="#C0392B")
+message_text.tag_config("error", font=("Helvetica", 12), foreground="#FF0000")
+
+
+
+# Function called when the login button is clicked
+def login():
+    email = email_entry.get()
+    password = password_entry.get()
+
+
+    message_text.insert(tk.END, "Checking emails...\n")
+    # Clear the Treeview
+    tree.delete(*tree.get_children())
+
+    checked_mails = set()
+    checked_links = []
+    # Fetch emails in a separate thread
+    thread = threading.Thread(target=check_email, args=(email, password, checked_mails, checked_links))
+    thread.start()
+
+def Fetch(username, password, checked_mails, checked_links):
+    imap_server = "imap.gmail.com"
+    imap_port = 993
+
+    try:
+        # Connect to the IMAP server
+        imap = imaplib.IMAP4_SSL(imap_server, imap_port)
+        imap.login(username, password)
+        imap.select("inbox")
+
+        # Search for all emails in the inbox
+        _, message_numbers = imap.search(None, 'ALL')
+
+        emails = []
+
+        # Iterate through each email and fetch its details
+        for num in message_numbers[0].split():
+            _, msg_data = imap.fetch(num, '(RFC822)')
+            for response_part in msg_data:
+                if isinstance(response_part, tuple):
+                    # Parse the email data
+                    msg = email.message_from_bytes(response_part[1])
+                    sender = msg['From']
+                    subject = msg['Subject']
+
+                    # Get the email content
+                    if msg.is_multipart():
+                        # If email has multiple parts, get the plain text part
+                        for part in msg.walk():
+                            content_type = part.get_content_type()
+                            if content_type == "text/plain":
+                                content = part.get_payload(decode=True).decode()
+                                break
+                    else:
+                        content = msg.get_payload(decode=True).decode()
+
+                    # Create a dictionary with email details
+                    email_data = {
+                        'sender': sender,
+                        'subject': subject,
+                        'content': content
+                    }
+
+                    # Add the email to the list
+                    emails.append(email_data)
+
+        imap.logout()
+
+        return emails
+
+    except imaplib.IMAP4.error as e:
+        print(f"IMAP Error: {str(e)}")
+        return []
+def fetch_emails(username, password):
+    checked_mails = set()
+    checked_links = []
+    emails = Fetch(username, password, checked_mails, checked_links)
+
+    # Call a UI update function after fetching emails
+    window.after(0, update_ui_emails, emails)
+
+def update_ui_emails(emails):
+    # Clear the Treeview
+    tree.delete(*tree.get_children())
+    # Display emails in the Treeview
+    for index, email in enumerate(emails, start=1):
+        sender = email['sender']
+        subject = email['subject']
+        content = email['content']
+
+        tree.insert('', 'end', text=str(index), values=(sender, subject, content))
+
+
+selected_percentage = 0  # Global variable to store the selected percentage
+
+def on_radiobutton_select():
+    global selected_percentage
+    selected_percentage = percentage_var.get()
+    print(f"Selected Risk Percentage: {selected_percentage}")
+
+def save_percentage():
+    global selected_percentage
+    try:
+        with open("percentage.pkl", "wb") as file:
+            pickle.dump(selected_percentage, file)
+        messagebox.showinfo("Success", "Percentage saved successfully!")
+    except Exception as e:
+        messagebox.showerror("Error", f"Failed to save percentage: {str(e)}")
+
+def load_percentage():
+    global selected_percentage
+    try:
+        with open("percentage.pkl", "rb") as file:
+            selected_percentage = pickle.load(file)
+        messagebox.showinfo("Success", "Percentage loaded successfully!")
+    except Exception as e:
+        messagebox.showerror("Error", f"Failed to load percentage: {str(e)}")
+
+def open_settings_menu():
+    global selected_percentage, percentage_var
+
+    settings_window = tk.Toplevel(window)
+    settings_window.title("Settings")
+    settings_window.geometry("300x200")
+
+    percentage_var = tk.IntVar()
+
+    # Creating radio buttons for each percentage option
+    zero_radio = tk.Radiobutton(settings_window, text="0%", variable=percentage_var, value=0, command=on_radiobutton_select)
+    twentyfive_radio = tk.Radiobutton(settings_window, text="25%", variable=percentage_var, value=25, command=on_radiobutton_select)
+    fifty_radio = tk.Radiobutton(settings_window, text="50%", variable=percentage_var, value=50, command=on_radiobutton_select)
+    seventyfive_radio = tk.Radiobutton(settings_window, text="75%", variable=percentage_var, value=75, command=on_radiobutton_select)
+    hundred_radio = tk.Radiobutton(settings_window, text="100%", variable=percentage_var, value=100, command=on_radiobutton_select)
+
+    # Setting the default selected percentage
+    percentage_var.set(selected_percentage)
+
+    zero_radio.pack()
+    twentyfive_radio.pack()
+    fifty_radio.pack()
+    seventyfive_radio.pack()
+    hundred_radio.pack()
+
+    # Button to save the selected percentage
+    save_button = tk.Button(settings_window, text="Save Percentage", command=save_percentage)
+    save_button.pack(pady=10)
+
+    # Button to load the saved percentage
+    load_button = tk.Button(settings_window, text="Load Percentage", command=load_percentage)
+    load_button.pack(pady=10)
+
+    settings_window.mainloop()
+
+# Button to open the settings menu
+settings_button = tk.Button(window, text="Settings", command=open_settings_menu)
+settings_button.pack(pady=10)
+
+
+
+login_button = tk.Button(frame_middle, text="Login", command=login, font=("Helvetica", 14), bg="#3498DB", fg="white")
+login_button.grid(row=2, columnspan=2, pady=10)
+refresh_button = tk.Button(frame_middle, text="Refresh", command=login, font=("Helvetica", 14), bg="#3498DB", fg="white")
+refresh_button.grid(row=5, columnspan=3, pady=10)
+
+
+# Launching the main GUI loop
+window.mainloop()
+import tkinter as tk
