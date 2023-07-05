@@ -1,0 +1,14 @@
+def open_risk_percentage_window():
+    def update_threshold():
+        risk_percentage = risk_percentage_checkbox.get()
+        threshold = risk_percentage / 100.0
+        print("Selected Risk Percentage:", risk_percentage)
+        print("Threshold:", threshold)
+
+    # Create a new window
+    risk_window = tk.Toplevel()
+    risk_window.title("Risk Percentage")
+
+    # Create the risk percentage checkbox
+    risk_percentage_checkbox = ttk.Checkbutton(risk_window, text="Risk Percentage", values=[0, 25, 50, 75, 100], command=update_threshold)
+    risk_percentage_checkbox.pack()
