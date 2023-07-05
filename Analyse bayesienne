@@ -1,0 +1,74 @@
+import nltk
+from nltk.sentiment import SentimentIntensityAnalyzer
+from nltk.tokenize import word_tokenize
+from tkinter import *
+import imaplib
+import email
+
+# Initialize NLTK and download necessary resources
+nltk.download('punkt')
+nltk.download('vader_lexicon')
+
+# Create an instance of the SentimentIntensityAnalyzer class
+analyzer = SentimentIntensityAnalyzer()
+
+
+def fetch_and_analyze_emails():
+    # Connect to the email server and fetch emails
+    # Replace the placeholders with your email credentials and server details
+    USERNAME = 'your_username'
+    PASSWORD = 'your_password'
+    IMAP_SERVER = 'imap.example.com'
+
+    # Connect to the IMAP server
+    imap = imaplib.IMAP4(IMAP_SERVER)
+    imap.login(USERNAME, PASSWORD)
+    imap.select("inbox")
+
+    # Search for emails with links in the subject or body
+    _, data = imap.search(None, '(OR SUBJECT "http" BODY "http")')
+    email_ids = data[0].split()
+
+    # Iterate over the fetched emails and analyze their sentiment
+    for email_id in email_ids:
+        _, msg_data = imap.fetch(email_id, '(RFC822)')
+        msg = email.message_from_bytes(msg_data[0][1])
+
+        # Extract the text content from the email
+        if msg.is_multipart():
+            text_content = ''
+            for part in msg.walk():
+                content_type = part.get_content_type()
+                if content_type == 'text/plain':
+                    text_content += part.get_payload(decode=True).decode('utf-8', errors='ignore')
+        else:
+            text_content = msg.get_payload(decode=True).decode('utf-8', errors='ignore')
+
+        # Tokenize the text content into words
+        tokens = word_tokenize(text_content)
+
+        # Analyze the sentiment of the tokens
+        sentiment_scores = analyzer.polarity_scores(text_content)
+        compound_score = sentiment_scores['compound']
+
+        # Display the sentiment result
+        print(f"Email ID: {email_id}")
+        print(f"Sentiment Score: {compound_score}")
+        print(f"Tokens: {tokens}")
+        print()
+
+    # Close the IMAP connection
+    imap.logout()
+
+
+# Create a Tkinter window
+window = Tk()
+window.title("Email Sentiment Analysis")
+window.geometry("400x200")
+
+# Create a button to fetch and analyze emails
+analyze_button = Button(window, text="Fetch and Analyze Emails", command=fetch_and_analyze_emails)
+analyze_button.pack(pady=10)
+
+# Start the Tkinter event loop
+window.mainloop()
