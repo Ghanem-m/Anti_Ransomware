@@ -1,7 +1,7 @@
 import tkinter as tk
-from tkinter import messagebox, ttk
 import imaplib
 import email
+from tkinter import messagebox, ttk
 import urllib.request
 import re
 import threading
@@ -10,6 +10,50 @@ import pickle
 # Function to check email and link safety
 checked_links = []
 checked_mails = []
+ham_proba = {
+    'would': 24.444444444444443,
+    'list': 17.77777777777778,
+    'just': 17.77777777777778,
+    'what': 20.0,
+    'there': 13.333333333333334,
+    'mailing': 15.555555555555555,
+    'other': 15.555555555555555,
+    'some': 15.555555555555555,
+    'instead': 15.555555555555555,
+    'only': 15.555555555555555,
+    'please': 2.2222222222222223,
+    'free': 4.444444444444445,
+    'wish': 2.2222222222222223,
+    'link': 6.666666666666667,
+    'growing': 2.2222222222222223,
+    'private': 2.2222222222222223,
+    'will': 8.88888888888889,
+    'days': 4.444444444444445,
+    'legal': 2.2222222222222223,
+    'click': 2.2222222222222223
+}
+spam_proba = {
+    'would': 6.666666666666667,
+    'list': 20.0,
+    'just': 8.88888888888889,
+    'what': 8.88888888888889,
+    'there': 4.444444444444445,
+    'mailing': 6.666666666666667,
+    'other': 8.88888888888889,
+    'some': 2.2222222222222223,
+    'instead': 2.2222222222222223,
+    'only': 4.444444444444445,
+    'please': 33.33333333333333,
+    'free': 11.11111111111111,
+    'wish': 31.11111111111111,
+    'link': 31.11111111111111,
+    'growing': 11.11111111111111,
+    'private': 8.88888888888889,
+    'will': 20.0,
+    'days': 22.22222222222222,
+    'legal': 4.444444444444445,
+    'click': 15.555555555555555
+}
 
 
 def check_email(username, password, checked_mails, checked_links):
@@ -40,6 +84,27 @@ def check_email(username, password, checked_mails, checked_links):
                 body = email_message.get_payload(decode=True)
 
             if body:
+                body_text = body.decode()
+                spam_probability = 1.0
+
+                for word in body_text.split():
+                    if word in spam_proba:
+                        spam_probability *= spam_proba[word] / 100.0
+                ham_probability = 1.0
+                for word in body_text.split():
+                    if word in ham_proba:
+                        ham_probability *= ham_proba[word] / 100.0
+                message_text.insert(tk.END, f"Le pourcentage de sûreté de ce mail {email_id.decode()} est de {ham_probability/(ham_probability+spam_probability):.2%}\n\n" )
+                if selected_percentage<ham_probability/(ham_probability+spam_probability):
+                    message_text.insert(tk.END,
+                                        f"Ce mail est donc considéré comme sûr \n")
+                else:
+                    message_text.insert(tk.END,
+                                        f"Ce mail est considéré comme malicieux, il est donc placé dans les spams")
+                    imap.copy(email_id, 'APPLICATION.Spam')
+                    imap.store(email_id, '+FLAGS', '\\Deleted')
+                    imap.expunge()
+
                 links = re.findall(r'(https?://\S+)', body.decode())
 
                 if links:
@@ -92,7 +157,6 @@ window.configure(background="#ECECEC")
 frame_top = tk.Frame(window, bg="#3498DB")
 frame_top.pack(pady=20)
 
-
 # Creating the title label
 title_label = tk.Label(frame_top, text="Malware Cleaner", font=("Helvetica", 24), fg="white", bg="#3498DB")
 title_label.pack()
@@ -137,7 +201,7 @@ frame_bottom = tk.Frame(window, bg="#ECECEC")
 frame_bottom.pack(pady=20)
 
 # Creating the Text widget to display messages
-message_text = tk.Text(frame_bottom, height=10, width=50, font=("Helvetica", 12), bg="white")
+message_text = tk.Text(frame_bottom, height=20, width=80, font=("Helvetica", 12), bg="white")
 message_text.pack(side="left", padx=10)
 
 # Creating the scrollbar for the Text widget
@@ -154,8 +218,6 @@ message_text.tag_config("safe", font=("Helvetica", 12), foreground="#27AE60")
 message_text.tag_config("malware", font=("Helvetica", 12), foreground="#C0392B")
 message_text.tag_config("error", font=("Helvetica", 12), foreground="#FF0000")
 
-
-
 # Function called when the login button is clicked
 def login():
     email = email_entry.get()
@@ -163,12 +225,9 @@ def login():
 
 
     message_text.insert(tk.END, "Checking emails...\n")
-    # Clear the Treeview
-    tree.delete(*tree.get_children())
 
     checked_mails = set()
     checked_links = []
-    # Fetch emails in a separate thread
     thread = threading.Thread(target=check_email, args=(email, password, checked_mails, checked_links))
     thread.start()
 
@@ -243,9 +302,17 @@ def update_ui_emails(emails):
         content = email['content']
 
         tree.insert('', 'end', text=str(index), values=(sender, subject, content))
+def logout():
+    email_entry.delete(0, tk.END)
+    password_entry.delete(0, tk.END)
+    message_text.delete("1.0", tk.END)
+    message_text.insert(tk.END, "Logged out successfully.\n")
+    tree.delete(*tree.get_children())
 
 
-selected_percentage = 0  # Global variable to store the selected percentage
+
+
+selected_percentage = 75  # Global variable to store the selected percentage
 
 def on_radiobutton_select():
     global selected_percentage
@@ -275,7 +342,7 @@ def open_settings_menu():
 
     settings_window = tk.Toplevel(window)
     settings_window.title("Settings")
-    settings_window.geometry("300x200")
+    settings_window.geometry("400x300")
 
     percentage_var = tk.IntVar()
 
@@ -296,7 +363,7 @@ def open_settings_menu():
     hundred_radio.pack()
 
     # Button to save the selected percentage
-    save_button = tk.Button(settings_window, text="Save Percentage", command=save_percentage)
+    save_button = tk.Button(settings_window, text="Save Percentage", command=save_percentage,font=("Helvetica", 9), bg="#3498DB", fg="white")
     save_button.pack(pady=10)
 
     # Button to load the saved percentage
@@ -306,15 +373,26 @@ def open_settings_menu():
     settings_window.mainloop()
 
 # Button to open the settings menu
-settings_button = tk.Button(window, text="Settings", command=open_settings_menu)
-settings_button.pack(pady=10)
+settings_button = tk.Button(window, text="Settings", command=open_settings_menu,font=("Helvetica", 14), bg="#3498DB", fg="white")
+settings_button.place(anchor="ne", relx=1.0, rely=0.0, x=-10, y=10)
+
+
+
+
 
 
 
 login_button = tk.Button(frame_middle, text="Login", command=login, font=("Helvetica", 14), bg="#3498DB", fg="white")
-login_button.grid(row=2, columnspan=2, pady=10)
+login_button.grid(row=2, column=0, pady=10, padx=(0, 10))
+
+logout_button = tk.Button(frame_middle, text="Logout", command=logout, font=("Helvetica", 14), bg="#3498DB", fg="white")
+logout_button.grid(row=2, column=1, pady=10, padx=(0, 10))
+
 refresh_button = tk.Button(frame_middle, text="Refresh", command=login, font=("Helvetica", 14), bg="#3498DB", fg="white")
-refresh_button.grid(row=5, columnspan=3, pady=10)
+refresh_button.grid(row=2, column=2, pady=10, padx=(0, 10))
+
+
+
 
 
 # Launching the main GUI loop
